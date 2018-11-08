@@ -88,6 +88,7 @@ executable HyperNerd
                      , Sqlite.Migration
                      , HyperNerd.Functor
                      , HyperNerd.Comonad
+                     , Levenshtein
   
   -- LANGUAGE extensions used by modules in this package.
   other-extensions:    OverloadedStrings
@@ -122,6 +123,7 @@ executable HyperNerd
                      , unordered-containers
                      , uri-encode
                      , comonad
+                     , text-metrics
   
   -- Directories containing source files.
   hs-source-dirs:      src
