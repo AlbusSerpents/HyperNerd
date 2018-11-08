@@ -8,11 +8,12 @@ import Data.Maybe
 import Control.Monad
 import Data.Text.Metrics
 
-levSelectOne :: T.Text -> [T.Text] -> [T.Text]
-levSelectOne target options =
+levSelectBy :: (a -> T.Text) -> T.Text -> [a] -> [a]
+levSelectBy f target options =
   map fst $
   join $
   maybeToList $
   listToMaybe $
   groupBy ((==) `on` snd) $
-  sortBy (flip compare `on` snd) $ zip options $ map (levenshtein target) options
+  sortBy (compare `on` snd) $
+  zip options $ map (levenshtein target . f) options

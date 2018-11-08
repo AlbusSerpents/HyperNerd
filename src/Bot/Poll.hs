@@ -20,6 +20,7 @@ import Events
 import Property
 import Reaction
 import Text.InterpolatedString.QM
+import Levenshtein
 
 data PollOption = PollOption
   { poPollId :: Int
@@ -253,12 +254,14 @@ registerPollVote Message { messageSender = sender
   options <-
     selectEntities "PollOption" $
     Filter (PropertyEquals "pollId" $ PropertyInt $ entityId poll) All
-  case find ((== optionName) . poName . entityPayload) options of
-    Just option -> registerOptionVote option sender
-    Nothing ->
-      logMsg
-        [qms|[WARNING] {senderName sender} voted for
-             unexisting option {optionName}|]
+  case levSelectBy (poName . entityPayload) optionName options of
+    [option] -> registerOptionVote option sender
+    collisions ->
+      replyToSender sender [qms|Couldn't find {optionName}.
+                                Similar options are: {collisionsList}|]
+      where collisionsList =
+              T.concat $
+              intersperse ", " $ map (poName . entityPayload) collisions
 
 announceRunningPoll :: Effect ()
 announceRunningPoll = do
