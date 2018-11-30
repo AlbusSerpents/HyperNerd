@@ -13,6 +13,9 @@ import IrcTransport
 import qualified Sqlite.EntityPersistence as SEP
 import System.Clock
 import System.Environment
+import Irc.Commands
+import qualified Data.Text as T
+import System.IO
 
 eventLoop :: Bot -> TimeSpec -> BotState -> IO ()
 eventLoop b prevCPUTime botState = do
@@ -24,6 +27,7 @@ eventLoop b prevCPUTime botState = do
     atomically (tryReadTQueue $ bsIncoming botState)
   pollMessage botState >>= advanceTimeouts deltaTime >>= eventLoop b currCPUTime
 
+-- TODO: can we use withBotState in logicEntry?
 logicEntry :: IncomingQueue -> OutcomingQueue -> Config -> String -> IO ()
 logicEntry incoming outcoming conf databasePath =
   SQLite.withConnection databasePath $ \sqliteConn -> do
@@ -49,4 +53,47 @@ mainWithArgs [configPath, databasePath] = do
 mainWithArgs _ = error "./HyperNerd <config-file> <database-file>"
 
 main :: IO ()
-main = getArgs >>= mainWithArgs
+main = getArgs >>= debugMain
+
+withBotState :: String -> Config -> (BotState -> IO ()) -> IO ()
+withBotState databasePath conf block = do
+  incoming <- atomically newTQueue
+  outcoming <- atomically newTQueue
+  SQLite.withConnection databasePath $ \sqliteConn -> do
+    SEP.prepareSchema sqliteConn
+    let botState =
+          BotState
+            { bsConfig = conf
+            , bsSqliteConn = sqliteConn
+            , bsTimeouts = []
+            , bsIncoming = incoming
+            , bsOutcoming = outcoming
+            }
+    block botState
+
+debugMain :: [String] -> IO ()
+debugMain [configPath, databasePath] = do
+  conf <- configFromFile configPath
+  withBotState databasePath conf $ \botState -> do
+    joinChannel bot botState >>= debugLoop bot
+debugMain _ = error "Config and database paths are not provided"
+
+-- TODO: Name `dumpOutcomingQueue` doesn't reflect the purpose of the function
+dumpOutcomingQueue :: OutcomingQueue -> IO ()
+dumpOutcomingQueue q = do
+  mb <- atomically (tryReadTQueue q)
+  case mb of
+    Just m -> do
+      putStr "Bot says: "
+      print m
+      dumpOutcomingQueue q
+    Nothing -> return ()
+
+debugLoop :: Bot -> BotState -> IO ()
+debugLoop b state = do
+  dumpOutcomingQueue $ bsOutcoming state
+  putStr "> "
+  hFlush stdout
+  text <- getLine
+  -- TODO: message produced by ircPrivmsg cannot be handled by handleIrcMessage
+  handleIrcMessage b (ircPrivmsg "#debug" $ T.pack text) state >>= debugLoop b
